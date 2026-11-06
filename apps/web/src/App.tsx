@@ -17,8 +17,6 @@ import {
   Plus,
   LogOut,
   GraduationCap,
-  Search,
-  Bell,
   Play,
   Check,
   Wallet,
@@ -27,6 +25,7 @@ import {
   Upload,
 } from "lucide-react";
 import { api, download } from "./api";
+import CourseCatalog, { LoadError } from "./CourseCatalog";
 type Data = Record<string, any>;
 const money = (n: number) => "¥" + (n / 100).toFixed(2);
 const roles: Data = { STUDENT: "学生", TEACHER: "教师", ADMIN: "管理员" };
@@ -60,6 +59,12 @@ function Cover({ course, large = false }: { course: Data; large?: boolean }) {
 function Card({ course }: { course: Data }) {
   return (
     <Link className="course-card" to={"/courses/" + course.id}>
+      {course.enrolled && (
+        <span className="enrolled-badge">
+          <Check size={13} />
+          已加入
+        </span>
+      )}
       <Cover course={course} />
       <div className="card-body">
         <span className="tag">{course.subject}</span>
@@ -92,6 +97,7 @@ export default function App() {
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false);
+  const [loginAccount, setLoginAccount] = useState("student");
   const location = useLocation();
   const refresh = () => api("/me").then(setUser);
   useEffect(() => {
@@ -108,6 +114,7 @@ export default function App() {
   async function act(fn: () => Promise<any>, message = "操作成功") {
     setBusy(true);
     setError("");
+    setNotice("");
     try {
       await fn();
       setNotice(message);
@@ -160,13 +167,20 @@ export default function App() {
             >
               <label>
                 账号
-                <input name="username" defaultValue="student" required />
+                <input
+                  name="username"
+                  autoComplete="username"
+                  value={loginAccount}
+                  onChange={(e) => setLoginAccount(e.target.value)}
+                  required
+                />
               </label>
               <label>
                 密码
                 <input
                   name="password"
                   type="password"
+                  autoComplete="current-password"
                   defaultValue="Demo123!"
                   required
                 />
@@ -178,7 +192,22 @@ export default function App() {
             </form>
             <div className="demo">
               <b>本地体验账号</b>
-              <p>学生 student · 教师 teacher · 管理员 admin</p>
+              <div className="demo-accounts">
+                {[
+                  ["student", "学生体验"],
+                  ["teacher", "教师体验"],
+                  ["admin", "管理员体验"],
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    aria-pressed={loginAccount === value}
+                    onClick={() => setLoginAccount(value)}
+                    disabled={busy}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
               <small>统一密码：Demo123!　余额及支付均为模拟</small>
             </div>
           </div>
@@ -192,7 +221,7 @@ export default function App() {
           <GraduationCap size={30} /> onlystudent
         </Link>
         <div className="workspace-label">我的学习空间</div>
-        <nav>
+        <nav aria-label="主导航">
           {[
             [Home, "/", "首页"],
             [BookOpen, "/courses", "网课"],
@@ -200,10 +229,10 @@ export default function App() {
             [User, "/me", "我的"],
             ...(user.role === "ADMIN" ? [[Shield, "/admin", "管理概览"]] : []),
           ].map(([Icon, path, label]: any) => (
-            <NavLink end={path === "/"} key={path} to={path}>
+            <NavLink aria-label={label} end={path === "/"} key={path} to={path}>
               <Icon size={20} />
               {label}
-              <span>↗</span>
+              <span aria-hidden="true">↗</span>
             </NavLink>
           ))}
         </nav>
@@ -222,15 +251,6 @@ export default function App() {
             <b>{user.name}</b>
             <small>{roles[user.role]}账号</small>
           </div>
-          <button
-            title="退出登录"
-            onClick={() => {
-              localStorage.removeItem("token");
-              setUser(null);
-            }}
-          >
-            <LogOut size={18} />
-          </button>
         </div>
       </aside>
       <section className="main">
@@ -238,22 +258,38 @@ export default function App() {
           <span>
             一起学习，一起向前 <span className="muted">/ OnlyStudent</span>
           </span>
-          <div>
-            <span className="online-dot" /> 学习空间已就绪 <Bell size={18} />
+          <div className="header-account">
+            <span className="role-chip">{roles[user.role]}空间</span>
             <div className="avatar small">{user.name.slice(0, 1)}</div>
+            <button
+              className="logout-button"
+              title="退出登录"
+              aria-label="退出登录"
+              onClick={() => {
+                localStorage.removeItem("token");
+                setUser(null);
+              }}
+            >
+              <LogOut size={17} />
+              <span>退出</span>
+            </button>
           </div>
         </header>
         <main>
           {error && (
             <div role="alert" className="error">
               {error}
-              <button onClick={() => setError("")}>×</button>
+              <button aria-label="关闭错误提示" onClick={() => setError("")}>
+                ×
+              </button>
             </div>
           )}
           {notice && (
             <div role="status" className="success">
               {notice}
-              <button onClick={() => setNotice("")}>×</button>
+              <button aria-label="关闭成功提示" onClick={() => setNotice("")}>
+                ×
+              </button>
             </div>
           )}
           <Routes>
@@ -499,9 +535,7 @@ function CourseForm({
 }
 function Courses(p: Props) {
   const { data, reload, error } = useData("/courses");
-  const [filter, setFilter] = useState("全部课程"),
-    [q, setQ] = useState(""),
-    [create, setCreate] = useState(false);
+  const [create, setCreate] = useState(false);
   return (
     <>
       <Title
@@ -529,47 +563,14 @@ function Courses(p: Props) {
           }
         />
       )}
-      <div className="toolbar">
-        <div className="tabs">
-          {["全部课程", "免费课程", "付费课程", "我的课程"].map((x) => (
-            <button
-              className={filter === x ? "selected" : ""}
-              onClick={() => setFilter(x)}
-              key={x}
-            >
-              {x}
-            </button>
-          ))}
-        </div>
-        <label className="search">
-          <Search size={18} />
-          <input
-            placeholder="搜索你感兴趣的课程"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-        </label>
-      </div>
-      {error && <div className="error">{error}</div>}
-      {!data ? (
-        <Empty>正在加载课程…</Empty>
-      ) : (
-        <div className="course-grid">
-          {data
-            .filter(
-              (c: Data) =>
-                c.title.includes(q) &&
-                (filter === "全部课程" ||
-                  (filter === "免费课程" && c.price === 0) ||
-                  (filter === "付费课程" && c.price > 0) ||
-                  (filter === "我的课程" &&
-                    (c.enrolled || c.teacherId === p.user.id))),
-            )
-            .map((c: Data) => (
-              <Card key={c.id} course={c} />
-            ))}
-        </div>
-      )}
+      <CourseCatalog
+        courses={data || []}
+        userId={p.user.id}
+        loading={!data}
+        error={error}
+        retry={reload}
+        renderCard={(c) => <Card course={c} />}
+      />
     </>
   );
 }
@@ -720,10 +721,16 @@ function Classes(p: Props) {
         title={p.user.role === "TEACHER" ? "我的教学班级" : "我的班级"}
         subtitle="在一起，更有学习的力量。"
         action={
-          <button className="primary" onClick={() => setOpen(!open)}>
-            <Plus size={18} />
-            {p.user.role === "TEACHER" ? "创建班级" : "加入班级"}
-          </button>
+          p.user.role !== "ADMIN" && (
+            <button
+              className="primary"
+              aria-expanded={open}
+              onClick={() => setOpen(!open)}
+            >
+              <Plus size={18} />
+              {p.user.role === "TEACHER" ? "创建班级" : "加入班级"}
+            </button>
+          )
         }
       />
       {open && (
@@ -764,7 +771,12 @@ function Classes(p: Props) {
           </button>
         </form>
       )}
-      {error && <div className="error">{error}</div>}
+      {error && <LoadError retry={reload} />}
+      {!data && !error && (
+        <div className="result-state" role="status">
+          正在加载班级…
+        </div>
+      )}
       <div className="class-grid">
         {data?.map((c: Data) => (
           <Link className="class-card" to={"/classes/" + c.id} key={c.id}>
@@ -785,7 +797,26 @@ function Classes(p: Props) {
         ))}
       </div>
       {data?.length === 0 && (
-        <Empty>还没有班级，使用邀请码加入第一个班级吧。</Empty>
+        <div className="result-state">
+          <div className="state-icon">
+            <Users />
+          </div>
+          <h2>
+            {p.user.role === "TEACHER"
+              ? "创建你的第一个班级"
+              : "学习，从加入班级开始"}
+          </h2>
+          <p>
+            {p.user.role === "TEACHER"
+              ? "把课程资料、练习和学生反馈集中在一起。"
+              : "向老师获取邀请码，开启一起学习的旅程。"}
+          </p>
+          {p.user.role !== "ADMIN" && (
+            <button className="primary" onClick={() => setOpen(true)}>
+              {p.user.role === "TEACHER" ? "创建班级" : "输入邀请码"}
+            </button>
+          )}
+        </div>
       )}
     </>
   );
@@ -907,7 +938,17 @@ function ClassDetail(p: Props) {
           )}
         </section>
       ) : tab === "学生名单" ? (
-        <section className="panel"><h2>班级学生 · {c.memberCount} 人</h2>{c.members.map((m:Data)=><div className="submission" key={m.id}><b>{m.name}</b></div>)}{!c.members.length&&<Empty>还没有学生加入，分享邀请码邀请同学吧。</Empty>}</section>
+        <section className="panel">
+          <h2>班级学生 · {c.memberCount} 人</h2>
+          {c.members.map((m: Data) => (
+            <div className="submission" key={m.id}>
+              <b>{m.name}</b>
+            </div>
+          ))}
+          {!c.members.length && (
+            <Empty>还没有学生加入，分享邀请码邀请同学吧。</Empty>
+          )}
+        </section>
       ) : tab === "学生提交" ? (
         <section className="panel">
           <h2>学生学习记录</h2>
