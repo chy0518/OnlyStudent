@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+model User {
+  id String @id @default(cuid())
+  username String @unique
+  password String
+  name String
+  role String
+  bio String @default("")
+  balance Int @default(0)
+}
+model Course {
+  id String @id @default(cuid())
+  teacherId String
+  title String
+  description String
+  subject String @default("通识")
+  price Int @default(0)
+  createdAt DateTime @default(now())
+}
+model Enrollment {
+  id String @id @default(cuid())
+  userId String
+  courseId String
+  @@unique([userId, courseId])
+}
+model SchoolClass {
+  id String @id @default(cuid())
+  teacherId String
+  title String
+  description String
+  code String @unique
+}
+model Member {
+  id String @id @default(cuid())
+  userId String
+  classId String
+  @@unique([userId, classId])
+}
+model Activity {
+  id String @id @default(cuid())
+  classId String
+  kind String
+  title String
+  content String
+  options Json @default("[]")
+  answer String @default("")
+  createdAt DateTime @default(now())
+}
+model Submission {
+  id String @id @default(cuid())
+  activityId String
+  userId String
+  content String
+  fileId String?
+  correct Boolean?
+  createdAt DateTime @default(now())
+  @@unique([activityId,userId])
+}
+model StoredFile {
+  id String @id @default(cuid())
+  ownerId String
+  courseId String?
+  classId String?
+  name String
+  objectKey String
+  mime String
+  size Int
+}
+model Transaction {
+  id String @id @default(cuid())
+  userId String
+  amount Int
+  kind String
+  key String @unique
+  courseId String?
+  createdAt DateTime @default(now())
+}
+model Follow {
+  id String @id @default(cuid())
+  userId String
+  teacherId String
+  @@unique([userId,teacherId])
+}

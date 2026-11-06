@@ -1,0 +1,79 @@
+name: onlystudent-mvp
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: onlystudent
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-onlystudent-local-db}
+      POSTGRES_DB: onlystudent
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U onlystudent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    command: [redis-server, --appendonly, "yes"]
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  minio:
+    build:
+      context: .
+      dockerfile: infra/minio/Dockerfile
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER:-onlystudent}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-onlystudent-local-secret}
+    volumes: [minio-data:/data]
+    healthcheck:
+      test: [CMD, curl, -f, http://localhost:9000/minio/health/live]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://onlystudent:${POSTGRES_PASSWORD:-onlystudent-local-db}@postgres:5432/onlystudent
+      REDIS_URL: redis://redis:6379
+      MINIO_HOST: minio
+      MINIO_USER: ${MINIO_USER:-onlystudent}
+      MINIO_PASSWORD: ${MINIO_PASSWORD:-onlystudent-local-secret}
+      JWT_SECRET: ${JWT_SECRET:-onlystudent-local-demo-change-before-production}
+      WEB_ORIGIN: http://localhost:${WEB_PORT:-5173}
+    ports: ["127.0.0.1:${API_PORT:-3000}:3000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://localhost:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports: ["127.0.0.1:${WEB_PORT:-5173}:80"]
+    depends_on:
+      api: { condition: service_healthy }
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
+networks:
+  default:
+    name: onlystudent-mvp-network
